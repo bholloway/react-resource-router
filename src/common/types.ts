@@ -83,11 +83,11 @@ export type RouteResourceUpdater<RouteResourceData = unknown> = (
 ) => RouteResourceData;
 
 export type RouteResourceResponseBase<RouteResourceData> = {
-  loading?: RouteResourceLoading;
-  error?: RouteResourceError | null;
-  data?: RouteResourceData;
   key?: string;
-  promise?: RouteResourcePromise<RouteResourceData>;
+  loading: RouteResourceLoading;
+  error: RouteResourceError | null;
+  data: RouteResourceData | null;
+  promise: RouteResourcePromise<RouteResourceData> | null;
   expiresAt: RouteResourceTimestamp;
   accessedAt: RouteResourceTimestamp;
 };
@@ -130,12 +130,15 @@ export type RouteResourceGettersArgs = [
   ResourceStoreContext
 ];
 
+export type ResourceType = string;
+export type ResourceKey = string;
+
 export type RouteResource<RouteResourceData = unknown> = {
-  type: string;
+  type: ResourceType;
   getKey: (
     routerContext: RouterContext,
     customContext: ResourceStoreContext
-  ) => string;
+  ) => ResourceKey;
   maxAge: number;
   getData: (
     routerContext: RouterDataContext,
@@ -149,11 +152,11 @@ export type RouteResources = RouteResource[];
 export type ResourceStoreContext = any;
 
 export type RouteResourceDataForType = {
-  [index: string]: RouteResourceResponseBase<unknown>;
+  [type: string]: RouteResourceResponseBase<unknown>;
 };
 
 export type ResourceStoreData = {
-  [index: string]: RouteResourceDataForType;
+  [key: string]: RouteResourceDataForType;
 };
 
 export type RouterContext = {
