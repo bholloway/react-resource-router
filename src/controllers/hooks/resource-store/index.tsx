@@ -49,18 +49,6 @@ export const useResource = <RouteResourceData extends unknown>(
     key,
   }) as RouteResourceResponse<RouteResourceData>[];
 
-  const update = useCallback(
-    (updater: RouteResourceUpdater<RouteResourceData>) => {
-      actions.updateResourceState(
-        resource.type,
-        key,
-        resource.maxAge,
-        updater as RouteResourceUpdater<unknown>
-      );
-    },
-    [resource, key, actions]
-  );
-
   // we keep route context bound to key, so route context won't refresh
   // unless key changes. This allows refresh to be called on effect cleanup
   // or asynchronously, when route context might already have changed
@@ -69,10 +57,24 @@ export const useResource = <RouteResourceData extends unknown>(
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [key]
   );
+
+  const update = useCallback(
+    (updater: RouteResourceUpdater<RouteResourceData>) => {
+      actions.updateResourceState(
+        resource as RouteResource<unknown>,
+        routerContext,
+        updater as RouteResourceUpdater<unknown>
+      );
+    },
+    [resource, routerContext, actions]
+  );
+
   const refresh = useCallback(() => {
-    actions.getResourceFromRemote(resource, routerContext, {
-      prefetch: false,
-    });
+    actions.getResourceFromRemote(
+      resource as RouteResource<unknown>,
+      routerContext,
+      { prefetch: false }
+    );
   }, [resource, routerContext, actions]);
 
   return { ...slice, update, key, refresh };

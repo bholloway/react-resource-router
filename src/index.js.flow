@@ -13,6 +13,8 @@ import type {
   Route,
   RouteContext,
   RouterActionsType,
+  RouteResourceBase,
+  GetData,
   RouteResource,
   RouteResourceData,
   RouteResourceResponse,
@@ -82,7 +84,7 @@ declare export function useRouterActions(): RouterActionsType;
 declare export function useResourceStoreContext(): ResourceStoreContext;
 declare export function createRouterSelector<T, U = void>(
   selector: (state: RouterState, props: U) => T
-): (U) => T;
+): U => T;
 
 declare export function useQueryParam(
   paramKey: string
@@ -138,16 +140,19 @@ type GetDataLoader<T> = () => Promise<{
  *
  */
 type CreateResourceArg<T> =
-  | {| ...RouteResource<T>, maxAge?: number, maxCache?: number |}
   | {|
-      ...$Diff<
-        RouteResource<T>,
-        {| getData: $PropertyType<RouteResource<T>, 'getData'> |}
-      >,
-      maxAge?: number,
-      getDataLoader: GetDataLoader<T>,
-      maxCache?: number,
-      isBrowserOnly?: boolean,
-    |};
+    ...RouteResourceBase,
+    getData: GetData<T>,
+    maxAge?: number,
+    maxCache?: number,
+    isBrowserOnly?: boolean,
+  |}
+  | {|
+    ...RouteResourceBase,
+    getDataLoader: GetDataLoader<T>,
+    maxAge?: number,
+    maxCache?: number,
+    isBrowserOnly?: boolean,
+|};
 
 declare export function createResource<T>(args: CreateResourceArg<T>): RouteResource<T>;

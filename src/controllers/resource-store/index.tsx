@@ -20,7 +20,6 @@ import {
   State,
 } from './types';
 import {
-  deleteResourceKey,
   deserializeError,
   getAccessedAt,
   getExpiresAt,
@@ -32,8 +31,9 @@ import {
   generateTimeGuard,
   TimeoutError,
   setSsrDataPromise,
+  getResourceState,
   setResourceState,
-  updateRemoteResourceState,
+  deleteResourceState,
   validateLRUCache,
 } from './utils';
 
@@ -45,23 +45,28 @@ export const actions: Actions = {
    *
    * Also resets the expiresAt based on maxAge
    */
-  updateResourceState: (type, key, maxAge, getNewSliceData) => ({
+  updateResourceState: (resource, routerStoreContext, getNewSliceData) => ({
     getState,
     dispatch,
   }) => {
-    const { data } = getState();
-
-    const slice = getSliceForResource({ data }, { type, key });
+    const { type, getKey, maxAge } = resource;
+    const { context, ...resourceStoreState } = getState();
+    const key = getKey(routerStoreContext, context);
+    const prevSlice = getSliceForResource(resourceStoreState, {
+      type,
+      key,
+    });
 
     dispatch(
       setResourceState(type, key, {
-        ...slice,
-        data: getNewSliceData(slice.data),
+        ...prevSlice,
+        data: getNewSliceData(prevSlice.data),
         expiresAt: getExpiresAt(maxAge),
         accessedAt: getAccessedAt(),
       })
     );
   },
+
   /**
    * Get a single resource, either from the cache if it exists and has not expired, or
    * the remote if it has expired.
@@ -72,12 +77,9 @@ export const actions: Actions = {
   }) => {
     const { type, getKey, maxAge } = resource;
     const { getResourceFromRemote } = actions;
-    const { data: resourceStoreData, context } = getState();
+    const { context, ...resourceStoreState } = getState();
     const key = getKey(routerStoreContext, context);
-    let cached = getSliceForResource(
-      { data: resourceStoreData },
-      { type, key }
-    );
+    let cached = getSliceForResource(resourceStoreState, { type, key });
 
     if (shouldUseCache(cached)) {
       if (isFromSsr(cached)) {
@@ -95,6 +97,7 @@ export const actions: Actions = {
       getResourceFromRemote(resource, routerStoreContext, options)
     );
   },
+
   /**
    * Request a single resource and update the resource cache.
    */
@@ -104,23 +107,23 @@ export const actions: Actions = {
   }): Promise<RouteResourceResponse<unknown>> => {
     const { type, getKey, getData, maxAge } = resource;
     const { prefetch, timeout } = options;
-    const { data: resourceStoreData, context } = getState();
+    const { context, ...resourceStoreState } = getState();
     const key = getKey(routerStoreContext, context);
-    const slice = getSliceForResource(
-      { data: resourceStoreData },
-      { type, key }
-    );
+    const prevSlice = getSliceForResource(resourceStoreState, {
+      type,
+      key,
+    });
 
-    if (slice.loading) {
-      return slice;
+    if (prevSlice.loading) {
+      return prevSlice;
     }
 
     dispatch(validateLRUCache(resource, key));
 
-    const pending = {
-      ...slice,
-      data: maxAge === 0 ? null : slice.data,
-      error: maxAge === 0 ? null : slice.error,
+    const pendingSlice = {
+      ...prevSlice,
+      data: maxAge === 0 ? null : prevSlice.data,
+      error: maxAge === 0 ? null : prevSlice.error,
       loading: true,
       promise: getData(
         { ...routerStoreContext, isPrefetch: !!prefetch },
@@ -129,10 +132,10 @@ export const actions: Actions = {
       accessedAt: getAccessedAt(),
     };
 
-    dispatch(setResourceState(type, key, pending));
+    dispatch(setResourceState(type, key, pendingSlice));
 
     const response = {
-      ...pending,
+      ...pendingSlice,
     };
 
     try {
@@ -141,7 +144,7 @@ export const actions: Actions = {
       if (timeout) {
         const timeoutGuard = generateTimeGuard(timeout);
         const maybeData = await Promise.race([
-          pending.promise,
+          pendingSlice.promise,
           timeoutGuard.promise,
         ]);
 
@@ -156,7 +159,7 @@ export const actions: Actions = {
           response.loading = false;
         }
       } else {
-        response.data = await pending.promise;
+        response.data = await pendingSlice.promise;
         response.loading = false;
       }
     } catch (e) {
@@ -170,10 +173,13 @@ export const actions: Actions = {
 
     response.accessedAt = getAccessedAt();
 
-    dispatch(updateRemoteResourceState(type, key, response));
+    if (dispatch(getResourceState(type, key))) {
+      dispatch(setResourceState(type, key, response));
+    }
 
     return response;
   },
+
   /**
    * Request all resources.
    *
@@ -204,18 +210,19 @@ export const actions: Actions = {
     getState,
     dispatch,
   }) => {
-    const { data, context: resourceContext } = getState();
+    const { context: resourceContext } = getState();
 
     resources.forEach(resource => {
       const { type, getKey } = resource;
       const key = getKey(routerStoreContext, resourceContext);
-      const slice = data[type]?.[key];
+      const slice = dispatch(getResourceState(type, key));
 
       if (slice && (!slice.expiresAt || slice.expiresAt < Date.now())) {
-        dispatch(deleteResourceKey(key, type));
+        dispatch(deleteResourceState(type, key));
       }
     });
   },
+
   /**
    * Requests a specific set of resources.
    */

@@ -1,6 +1,6 @@
 /* eslint-disable no-use-before-define */
 
-import { StoreActionApi } from 'react-sweet-state';
+import { Action, StoreActionApi } from 'react-sweet-state';
 
 import {
   ResourceStoreContext,
@@ -34,17 +34,12 @@ type GetResourceOptions = {
   isStatic?: boolean;
 };
 
-type ResourceAction<R> = ({
-  getState,
-  setState,
-  dispatch,
-}: StoreActionApi<State>) => R;
+export type ResourceAction<T> = Action<State, void, T>;
 
 export type Actions = {
   updateResourceState: (
-    type: RouteResource['type'],
-    key: string,
-    maxAge: RouteResource['maxAge'],
+    resource: RouteResource,
+    routerStoreContext: RouterContext,
     getNewSliceData: RouteResourceUpdater
   ) => ResourceAction<void>;
   getResource: (

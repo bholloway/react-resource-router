@@ -12,7 +12,7 @@ export { TimeoutError } from './timeout-error';
 export { setSsrDataPromise } from './ssr-data-promise';
 export { validateLRUCache } from './lru-cache';
 export {
-  deleteResourceKey,
+  deleteResourceState,
+  getResourceState,
   setResourceState,
-  updateRemoteResourceState,
 } from './manage-resource-state';
