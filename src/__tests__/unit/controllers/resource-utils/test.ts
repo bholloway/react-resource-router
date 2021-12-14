@@ -16,6 +16,7 @@ describe('resource utils', () => {
         getData: expect.any(Function),
         maxAge: 0,
         maxCache: DEFAULT_CACHE_MAX_LIMIT,
+        depends: null,
       });
     });
 
@@ -35,6 +36,7 @@ describe('resource utils', () => {
         getData: expect.any(Function),
         maxAge: 0,
         maxCache: DEFAULT_CACHE_MAX_LIMIT,
+        depends: null,
       });
 
       await resource.getData(routerContext, {});
@@ -55,6 +57,7 @@ describe('resource utils', () => {
         getData: expect.any(Function),
         maxAge: 400,
         maxCache: DEFAULT_CACHE_MAX_LIMIT,
+        depends: null,
       });
     });
 
@@ -73,6 +76,7 @@ describe('resource utils', () => {
         getData: expect.any(Function),
         maxAge: 0,
         maxCache: 3,
+        depends: null,
       });
     });
   });

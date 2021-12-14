@@ -1,4 +1,5 @@
 import {
+  ResourceType,
   RouteResource,
   RouteResourceDataPayload,
   RouteResourceGettersArgs,
@@ -19,11 +20,13 @@ type GetDataLoader<T> = () => Promise<{
 type BaseResource = Pick<RouteResource, 'type' | 'getKey'>;
 
 interface CreateResourceSync<T> extends BaseResource {
+  depends?: ResourceType[];
   getData: RouteResource<T>['getData'];
   maxAge?: number;
   maxCache?: number;
 }
 interface CreateResourceAsync<T> extends BaseResource {
+  depends?: ResourceType[];
   getDataLoader: GetDataLoader<T>;
   maxAge?: number;
   maxCache?: number;
@@ -56,5 +59,6 @@ export function createResource(args: any) {
       typeof args.maxCache === 'number'
         ? args.maxCache
         : DEFAULT_CACHE_MAX_LIMIT,
+    depends: args.depends ?? null,
   };
 }

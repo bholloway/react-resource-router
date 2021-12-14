@@ -13,6 +13,7 @@ import type {
   Route,
   RouteContext,
   RouterActionsType,
+  ResourceType,
   RouteResourceBase,
   GetData,
   RouteResource,
@@ -139,18 +140,22 @@ type GetDataLoader<T> = () => Promise<{
  * Utility method to created type safe resources with defaults.
  *
  */
-type CreateResourceArg<T> =
-  | {|
-    ...RouteResourceBase,
-    getData: GetData<T>,
-    maxAge?: number,
-    maxCache?: number,
-  |}
-  | {|
-    ...RouteResourceBase,
-    getDataLoader: GetDataLoader<T>,
-    maxAge?: number,
-    maxCache?: number,
-  |};
+export type CreateResourceSync<T> = {|
+  ...RouteResourceBase,
+  getData: GetData<T>,
+  maxAge?: number,
+  maxCache?: number,
+  depends?: ResourceType[],
+|};
+export type CreateResourceAsync<T> = {|
+...RouteResourceBase,
+  getDataLoader: GetDataLoader<T>,
+  maxAge?: number,
+  maxCache?: number,
+  depends?: ResourceType[],
+|};
+export type CreateResourceArg<T> = CreateResourceSync<T> | CreateResourceAsync<T>;
 
-declare export function createResource<T>(args: CreateResourceArg<T>): RouteResource<T>;
+declare export function createResource<T>(
+  args: CreateResourceArg<T>
+): RouteResource<T>;

@@ -35,6 +35,7 @@ import {
   setResourceState,
   deleteResourceState,
   validateLRUCache,
+  withDependentResources,
 } from './utils';
 
 const PREFETCH_MAX_AGE = 10000;
@@ -45,27 +46,30 @@ export const actions: Actions = {
    *
    * Also resets the expiresAt based on maxAge
    */
-  updateResourceState: (resource, routerStoreContext, getNewSliceData) => ({
-    getState,
-    dispatch,
-  }) => {
-    const { type, getKey, maxAge } = resource;
-    const { context, ...resourceStoreState } = getState();
-    const key = getKey(routerStoreContext, context);
-    const prevSlice = getSliceForResource(resourceStoreState, {
-      type,
-      key,
-    });
+  updateResourceState: (resource, routerStoreContext, getNewSliceData) =>
+    withDependentResources(
+      routerStoreContext,
+      list => actions.refreshResources(list, routerStoreContext, {}),
+      ({ beginChange, getState, dispatch }) => {
+        const { type, getKey, maxAge } = resource;
+        const { context, ...resourceStoreState } = getState();
+        const key = getKey(routerStoreContext, context);
+        const prevSlice = getSliceForResource(resourceStoreState, {
+          type,
+          key,
+        });
+        const onChanged = beginChange(type);
 
-    dispatch(
-      setResourceState(type, key, {
-        ...prevSlice,
-        data: getNewSliceData(prevSlice.data),
-        expiresAt: getExpiresAt(maxAge),
-        accessedAt: getAccessedAt(),
-      })
-    );
-  },
+        const newSlice = {
+          ...prevSlice,
+          data: getNewSliceData(prevSlice.data),
+          expiresAt: getExpiresAt(maxAge),
+          accessedAt: getAccessedAt(),
+        };
+        dispatch(setResourceState(type, key, newSlice));
+        onChanged(newSlice.data !== prevSlice.data);
+      }
+    ),
 
   /**
    * Get a single resource, either from the cache if it exists and has not expired, or
@@ -101,84 +105,102 @@ export const actions: Actions = {
   /**
    * Request a single resource and update the resource cache.
    */
-  getResourceFromRemote: (resource, routerStoreContext, options) => async ({
-    getState,
-    dispatch,
-  }): Promise<RouteResourceResponse<unknown>> => {
-    const { type, getKey, getData, maxAge } = resource;
-    const { prefetch, timeout } = options;
-    const { context, ...resourceStoreState } = getState();
-    const key = getKey(routerStoreContext, context);
-    const prevSlice = getSliceForResource(resourceStoreState, {
-      type,
-      key,
-    });
+  getResourceFromRemote: (resource, routerStoreContext, options) =>
+    withDependentResources(
+      routerStoreContext,
+      list => actions.refreshResources(list, routerStoreContext, options),
+      async ({
+        getState,
+        getDependencies,
+        beginChange,
+        dispatch,
+      }): Promise<RouteResourceResponse<unknown>> => {
+        const { type, getKey, getData, maxAge } = resource;
+        const { prefetch, timeout } = options;
+        const { context, ...resourceStoreState } = getState();
+        const key = getKey(routerStoreContext, context);
+        const prevSlice = getSliceForResource(resourceStoreState, {
+          type,
+          key,
+        });
 
-    if (prevSlice.loading) {
-      return prevSlice;
-    }
+        if (prevSlice.loading) {
+          return prevSlice;
+        }
 
-    dispatch(validateLRUCache(resource, key));
+        dispatch(validateLRUCache(resource, key));
 
-    const pendingSlice = {
-      ...prevSlice,
-      data: maxAge === 0 ? null : prevSlice.data,
-      error: maxAge === 0 ? null : prevSlice.error,
-      loading: true,
-      promise: getData(
-        { ...routerStoreContext, isPrefetch: !!prefetch },
-        context
-      ),
-      accessedAt: getAccessedAt(),
-    };
+        const dependencies = getDependencies(resource);
+        const resourceFetchContext = dependencies
+          ? { isPrefetch: !!prefetch, dependencies }
+          : { isPrefetch: !!prefetch };
+        const pendingSlice = {
+          ...prevSlice,
+          data: maxAge === 0 ? null : prevSlice.data,
+          error: maxAge === 0 ? null : prevSlice.error,
+          loading: true,
+          promise: getData(
+            {
+              ...routerStoreContext,
+              ...resourceFetchContext,
+            },
+            context
+          ),
+          accessedAt: getAccessedAt(),
+        };
 
-    dispatch(setResourceState(type, key, pendingSlice));
+        dispatch(setResourceState(type, key, pendingSlice));
+        const complete = beginChange(type);
 
-    const response = {
-      ...pendingSlice,
-    };
+        const response = {
+          ...pendingSlice,
+        };
 
-    try {
-      response.error = null;
+        try {
+          response.error = null;
 
-      if (timeout) {
-        const timeoutGuard = generateTimeGuard(timeout);
-        const maybeData = await Promise.race([
-          pendingSlice.promise,
-          timeoutGuard.promise,
-        ]);
+          if (timeout) {
+            const timeoutGuard = generateTimeGuard(timeout);
+            const maybeData = await Promise.race([
+              pendingSlice.promise,
+              timeoutGuard.promise,
+            ]);
 
-        if (!timeoutGuard.isPending) {
-          response.data = null;
-          response.error = new TimeoutError(type);
-          response.loading = true;
-          response.promise = null;
-        } else {
-          timeoutGuard.timerId && clearTimeout(timeoutGuard.timerId);
-          response.data = maybeData;
+            if (!timeoutGuard.isPending) {
+              response.data = null;
+              response.error = new TimeoutError(type);
+              response.loading = true;
+              response.promise = null;
+            } else {
+              timeoutGuard.timerId && clearTimeout(timeoutGuard.timerId);
+              response.data = maybeData;
+              response.loading = false;
+            }
+          } else {
+            response.data = await pendingSlice.promise;
+            response.loading = false;
+          }
+        } catch (e) {
+          response.error = e;
           response.loading = false;
         }
-      } else {
-        response.data = await pendingSlice.promise;
-        response.loading = false;
+
+        response.expiresAt = getExpiresAt(
+          options.prefetch && maxAge < PREFETCH_MAX_AGE
+            ? PREFETCH_MAX_AGE
+            : maxAge
+        );
+
+        response.accessedAt = getAccessedAt();
+
+        if (dispatch(getResourceState(type, key))) {
+          dispatch(setResourceState(type, key, response));
+        }
+        complete(response.data !== prevSlice.data);
+
+        return response;
       }
-    } catch (e) {
-      response.error = e;
-      response.loading = false;
-    }
-
-    response.expiresAt = getExpiresAt(
-      options.prefetch && maxAge < PREFETCH_MAX_AGE ? PREFETCH_MAX_AGE : maxAge
-    );
-
-    response.accessedAt = getAccessedAt();
-
-    if (dispatch(getResourceState(type, key))) {
-      dispatch(setResourceState(type, key, response));
-    }
-
-    return response;
-  },
+    ),
 
   /**
    * Request all resources.
@@ -226,11 +248,29 @@ export const actions: Actions = {
   /**
    * Requests a specific set of resources.
    */
-  requestResources: (resources, routerStoreContext, options) => ({
-    dispatch,
-  }) =>
-    resources.map(resource =>
-      dispatch(actions.getResource(resource, routerStoreContext, options))
+  requestResources: (resources, routerStoreContext, options) =>
+    withDependentResources(
+      routerStoreContext,
+      list => actions.refreshResources(list, routerStoreContext, options),
+      ({ dispatch }) =>
+        resources.map(resource =>
+          dispatch(actions.getResource(resource, routerStoreContext, options))
+        )
+    ),
+
+  /**
+   * Refreshes a specific set of resources.
+   */
+  refreshResources: (resources, routerStoreContext, options) =>
+    withDependentResources(
+      routerStoreContext,
+      list => actions.refreshResources(list, routerStoreContext, options),
+      ({ dispatch }) =>
+        resources.map(resource =>
+          dispatch(
+            actions.getResourceFromRemote(resource, routerStoreContext, options)
+          )
+        )
     ),
 
   /**

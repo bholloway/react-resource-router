@@ -64,6 +64,11 @@ export type Actions = {
     routerStoreContext: RouterContext,
     options: GetResourceOptions
   ) => ResourceAction<Promise<RouteResourceResponse>[]>;
+  refreshResources: (
+    resources: RouteResource[],
+    routerStoreContext: RouterContext,
+    options: GetResourceOptions
+  ) => ResourceAction<Promise<RouteResourceResponse>[]>;
   hydrate: (
     state: HydratableState
   ) => ({ getState, setState }: StoreActionApi<State>) => void;

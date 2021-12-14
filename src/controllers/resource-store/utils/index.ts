@@ -16,3 +16,4 @@ export {
   getResourceState,
   setResourceState,
 } from './manage-resource-state';
+export { withDependentResources } from './dependent-resources';

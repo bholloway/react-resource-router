@@ -71,11 +71,19 @@ export type RouteResourceResponse<T> = {|
   accessedAt: RouteResourceTimestamp,
 |};
 
-type ResourceFetchContext = { isPrefetch: boolean };
-export type RouterDataContext = { ...RouterContext, ...ResourceFetchContext };
-
 export type ResourceType = string;
 export type ResourceKey = string;
+
+type ResourceDependencies = {
+  [ResourceType]: RouteResourceResponse<mixed> | Error,
+};
+
+type ResourceFetchContext = {
+  isPrefetch: boolean,
+  dependencies?: ResourceDependencies,
+};
+
+export type RouterDataContext = { ...RouterContext, ...ResourceFetchContext };
 
 export type GetKey = (
   routerContext: RouterContext,
@@ -92,6 +100,7 @@ export type RouteResourceBase = {|
   getKey: GetKey,
   maxAge: number,
   maxCache: number,
+  depends: ResourceType[] | null,
 |};
 
 export type RouteResource<T> = {|
@@ -111,7 +120,9 @@ export type ResourceOptions = {
   routerContext?: RouterContext,
 };
 
-export type RouteResourceUpdater<T> = (data: RouteResourceData<T>) => RouteResourceData<T>;
+export type RouteResourceUpdater<T> = (
+  data: RouteResourceData<T>
+) => RouteResourceData<T>;
 
 export type InvariantRoute = {
   path: string,
