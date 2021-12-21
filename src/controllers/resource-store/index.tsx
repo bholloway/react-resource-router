@@ -9,13 +9,18 @@ import {
 import {
   ResourceStoreContext,
   ResourceStoreData,
+  RouterContext,
+  RouteResource,
   RouteResourceResponse,
+  RouteResourceUpdater,
 } from '../../common/types';
 
 import { getResourceStoreContext, getSliceForResource } from './selectors';
 import {
   Actions,
   ContainerProps,
+  GetResourceOptions,
+  ResourceAction,
   ResourceSliceIdentifier,
   State,
 } from './types';
@@ -35,20 +40,24 @@ import {
   setResourceState,
   deleteResourceState,
   validateLRUCache,
+  actionWithDependencies,
+  mapActionWithDependencies,
+  executeForDependents,
+  getDependencies,
 } from './utils';
 
 const PREFETCH_MAX_AGE = 10000;
 
-export const actions: Actions = {
+export const privateActions = {
   /**
-   * Update the data property for a resource in the cache.
-   *
-   * Also resets the expiresAt based on maxAge
+   * Update the data property for a resource in the cache and reset expiresAt based
+   * on maxAge.
    */
-  updateResourceState: (resource, routerStoreContext, getNewSliceData) => ({
-    getState,
-    dispatch,
-  }) => {
+  updateResourceState: (
+    resource: RouteResource,
+    routerStoreContext: RouterContext,
+    getNewSliceData: RouteResourceUpdater
+  ): ResourceAction<void> => ({ getState, dispatch }) => {
     const { type, getKey, maxAge } = resource;
     const { context, ...resourceStoreState } = getState();
     const key = getKey(routerStoreContext, context);
@@ -57,26 +66,39 @@ export const actions: Actions = {
       key,
     });
 
-    dispatch(
-      setResourceState(type, key, {
-        ...prevSlice,
-        data: getNewSliceData(prevSlice.data),
-        expiresAt: getExpiresAt(maxAge),
-        accessedAt: getAccessedAt(),
-      })
-    );
+    const newSlice = {
+      ...prevSlice,
+      data: getNewSliceData(prevSlice.data),
+      expiresAt: getExpiresAt(maxAge),
+      accessedAt: getAccessedAt(),
+    };
+    dispatch(setResourceState(type, key, newSlice));
+
+    if (newSlice.data !== prevSlice.data) {
+      dispatch(
+        executeForDependents(
+          resource,
+          privateActions.getResourceFromRemote,
+          routerStoreContext,
+          {}
+        )
+      );
+    }
   },
 
   /**
    * Get a single resource, either from the cache if it exists and has not expired, or
    * the remote if it has expired.
    */
-  getResource: (resource, routerStoreContext, options) => async ({
+  getResource: (
+    resource: RouteResource,
+    routerStoreContext: RouterContext,
+    options: GetResourceOptions
+  ): ResourceAction<Promise<RouteResourceResponse>> => ({
     getState,
     dispatch,
   }) => {
     const { type, getKey, maxAge } = resource;
-    const { getResourceFromRemote } = actions;
     const { context, ...resourceStoreState } = getState();
     const key = getKey(routerStoreContext, context);
     let cached = getSliceForResource(resourceStoreState, { type, key });
@@ -90,21 +112,29 @@ export const actions: Actions = {
       cached.accessedAt = getAccessedAt();
       dispatch(setResourceState(type, key, cached));
 
-      return cached;
+      return Promise.resolve(cached);
     }
 
     return dispatch(
-      getResourceFromRemote(resource, routerStoreContext, options)
+      privateActions.getResourceFromRemote(
+        resource,
+        routerStoreContext,
+        options
+      )
     );
   },
 
   /**
    * Request a single resource and update the resource cache.
    */
-  getResourceFromRemote: (resource, routerStoreContext, options) => async ({
+  getResourceFromRemote: (
+    resource: RouteResource,
+    routerStoreContext: RouterContext,
+    options: GetResourceOptions
+  ): ResourceAction<Promise<RouteResourceResponse<unknown>>> => async ({
     getState,
     dispatch,
-  }): Promise<RouteResourceResponse<unknown>> => {
+  }) => {
     const { type, getKey, getData, maxAge } = resource;
     const { prefetch, timeout } = options;
     const { context, ...resourceStoreState } = getState();
@@ -120,19 +150,36 @@ export const actions: Actions = {
 
     dispatch(validateLRUCache(resource, key));
 
+    const promiseOrData = getData(
+      {
+        ...routerStoreContext,
+        isPrefetch: !!prefetch,
+        dependencies: dispatch(getDependencies(resource, routerStoreContext)),
+      },
+      context
+    );
+
+    if (promiseOrData === prevSlice.data) {
+      return prevSlice;
+    }
+
     const pendingSlice = {
       ...prevSlice,
       data: maxAge === 0 ? null : prevSlice.data,
       error: maxAge === 0 ? null : prevSlice.error,
       loading: true,
-      promise: getData(
-        { ...routerStoreContext, isPrefetch: !!prefetch },
-        context
-      ),
+      promise: promiseOrData,
       accessedAt: getAccessedAt(),
     };
-
     dispatch(setResourceState(type, key, pendingSlice));
+    dispatch(
+      executeForDependents(
+        resource,
+        privateActions.getResourceFromRemote,
+        routerStoreContext,
+        options
+      )
+    );
 
     const response = {
       ...pendingSlice,
@@ -168,7 +215,7 @@ export const actions: Actions = {
     }
 
     response.expiresAt = getExpiresAt(
-      options.prefetch && maxAge < PREFETCH_MAX_AGE ? PREFETCH_MAX_AGE : maxAge
+      prefetch && maxAge < PREFETCH_MAX_AGE ? PREFETCH_MAX_AGE : maxAge
     );
 
     response.accessedAt = getAccessedAt();
@@ -179,10 +226,62 @@ export const actions: Actions = {
 
     return response;
   },
+};
+
+export const actions: Actions = {
+  /**
+   * Update the data property for a resource in the cache and reset expiresAt based
+   * on maxAge.
+   * Execute such that dependencies will be updated.
+   */
+  updateResourceState: (
+    resource: RouteResource,
+    routerStoreContext: RouterContext,
+    ...args
+  ) =>
+    actionWithDependencies<void>(
+      routerStoreContext.route.resources,
+      resource,
+      privateActions.updateResourceState(resource, routerStoreContext, ...args)
+    ),
+
+  /**
+   * Get a single resource, either from the cache if it exists and has not expired, or
+   * the remote if it has expired.
+   * Execute such that dependencies will be updated.
+   */
+  getResource: (
+    resource: RouteResource,
+    routerStoreContext: RouterContext,
+    ...args
+  ) =>
+    actionWithDependencies<Promise<RouteResourceResponse<unknown>>>(
+      routerStoreContext.route.resources,
+      resource,
+      privateActions.getResource(resource, routerStoreContext, ...args)
+    ),
+
+  /**
+   * Request a single resource and update the resource cache.
+   * Execute such that dependencies will be updated.
+   */
+  getResourceFromRemote: (
+    resource: RouteResource,
+    routerStoreContext: RouterContext,
+    ...args
+  ) =>
+    actionWithDependencies<Promise<RouteResourceResponse<unknown>>>(
+      routerStoreContext.route.resources,
+      resource,
+      privateActions.getResourceFromRemote(
+        resource,
+        routerStoreContext,
+        ...args
+      )
+    ),
 
   /**
    * Request all resources.
-   *
    */
   requestAllResources: (routerStoreContext, options) => ({ dispatch }) => {
     const { route } = routerStoreContext || {};
@@ -226,23 +325,22 @@ export const actions: Actions = {
   /**
    * Requests a specific set of resources.
    */
-  requestResources: (resources, routerStoreContext, options) => ({
-    dispatch,
-  }) => {
-    // Filter out isBrowserOnly resources if on server
-    const filteredResources = options.isStatic
-      ? resources.filter(resource => !resource.isBrowserOnly)
-      : resources;
+  requestResources: (resources, routerStoreContext, options) => {
+    const predicate = options.isStatic
+      ? ({ isBrowserOnly }: RouteResource) => !isBrowserOnly
+      : () => true;
 
-    return filteredResources.map(resource =>
-      dispatch(actions.getResource(resource, routerStoreContext, options))
+    return mapActionWithDependencies<Promise<RouteResourceResponse<unknown>>>(
+      routerStoreContext.route.resources?.filter(predicate),
+      resources.filter(predicate),
+      resource =>
+        privateActions.getResource(resource, routerStoreContext, options)
     );
   },
 
   /**
    * Hydrates the store with state.
    * Will not override pre-hydrated state.
-   *
    */
   hydrate: ({ resourceData, resourceContext }) => ({ getState, setState }) => {
     const { data, context } = getState();
@@ -282,13 +380,11 @@ export const actions: Actions = {
 
   /**
    * Gets the store's context
-   *
    */
   getContext: () => ({ getState }) => getState().context,
 
   /**
    * Returns safe, portable and rehydratable data.
-   *
    */
   getSafeData: () => ({ getState }) =>
     transformData(getState().data, ({ data, key, error, loading }) => ({
@@ -310,6 +406,7 @@ export const ResourceStore = createStore<State, Actions>({
   initialState: {
     data: {},
     context: {},
+    executing: null,
   },
   actions,
   name: 'router-resources',

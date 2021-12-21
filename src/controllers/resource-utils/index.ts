@@ -1,4 +1,5 @@
 import {
+  ResourceType,
   RouteResource,
   RouteResourceDataPayload,
   RouteResourceGettersArgs,
@@ -20,12 +21,14 @@ type GetDataLoader<T> = () => Promise<{
 type BaseResource = Pick<RouteResource, 'type' | 'getKey'>;
 
 interface CreateResourceSync<T> extends BaseResource {
+  depends?: ResourceType[];
   getData: RouteResource<T>['getData'];
   maxAge?: number;
   maxCache?: number;
   isBrowserOnly?: boolean;
 }
 interface CreateResourceAsync<T> extends BaseResource {
+  depends?: ResourceType[];
   getDataLoader: GetDataLoader<T>;
   maxAge?: number;
   maxCache?: number;
@@ -63,5 +66,6 @@ export function createResource(args: any) {
       typeof args.isBrowserOnly === 'boolean'
         ? args.isBrowserOnly
         : DEFAULT_RESOURCE_IS_BROWSER,
+    depends: args.depends ?? null,
   };
 }

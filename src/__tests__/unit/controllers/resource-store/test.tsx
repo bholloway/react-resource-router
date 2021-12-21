@@ -218,6 +218,7 @@ describe('resource store', () => {
               },
             },
           },
+          executing: null,
         });
         expect(spy).toHaveBeenNthCalledWith(2, {
           context: {},
@@ -233,6 +234,7 @@ describe('resource store', () => {
               },
             },
           },
+          executing: null,
         });
       });
 
@@ -383,6 +385,7 @@ describe('resource store', () => {
               },
             },
           },
+          executing: null,
         });
       });
     });
@@ -867,6 +870,7 @@ describe('resource store', () => {
             },
           },
         },
+        executing: null,
       };
       // @ts-ignore mocking resource store state
       const slice = getSliceForResource(state, { type, key });

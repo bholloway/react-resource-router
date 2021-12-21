@@ -133,7 +133,7 @@ export type RouteResourceGettersArgs = [
 export type ResourceType = string;
 export type ResourceKey = string;
 
-export type RouteResource<RouteResourceData = unknown> = {
+export type RouteResource<RouteResourceData extends unknown = unknown> = {
   type: ResourceType;
   getKey: (
     routerContext: RouterContext,
@@ -146,6 +146,7 @@ export type RouteResource<RouteResourceData = unknown> = {
   ) => RouteResourcePromise<RouteResourceData>;
   maxCache: number;
   isBrowserOnly: boolean;
+  depends: ResourceType[] | null;
 };
 
 export type RouteResources = RouteResource[];
@@ -166,8 +167,13 @@ export type RouterContext = {
   query: Query;
 };
 
+export type ResourceDependencies = {
+  [type: string]: RouteResourceResponse | Error;
+};
+
 export type ResourceFetchContext = {
   isPrefetch: boolean;
+  dependencies: ResourceDependencies | null;
 };
 
 /**

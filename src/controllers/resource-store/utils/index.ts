@@ -16,3 +16,9 @@ export {
   getResourceState,
   setResourceState,
 } from './manage-resource-state';
+export {
+  actionWithDependencies,
+  mapActionWithDependencies,
+  executeForDependents,
+  getDependencies,
+} from './dependent-resources';

@@ -17,6 +17,7 @@ describe('resource utils', () => {
         maxAge: 0,
         maxCache: DEFAULT_CACHE_MAX_LIMIT,
         isBrowserOnly: false,
+        depends: null,
       });
     });
 
@@ -37,6 +38,7 @@ describe('resource utils', () => {
         maxAge: 0,
         maxCache: DEFAULT_CACHE_MAX_LIMIT,
         isBrowserOnly: false,
+        depends: null,
       });
 
       await resource.getData(routerContext, {});
@@ -58,6 +60,7 @@ describe('resource utils', () => {
         maxAge: 400,
         maxCache: DEFAULT_CACHE_MAX_LIMIT,
         isBrowserOnly: false,
+        depends: null,
       });
     });
 
@@ -77,6 +80,7 @@ describe('resource utils', () => {
         maxAge: 0,
         maxCache: 3,
         isBrowserOnly: false,
+        depends: null,
       });
     });
 
@@ -88,6 +92,7 @@ describe('resource utils', () => {
         maxAge: 0,
         maxCache: 3,
         isBrowserOnly: true,
+        depends: null,
       });
 
       expect(resource).toEqual({
@@ -97,6 +102,7 @@ describe('resource utils', () => {
         maxAge: 0,
         maxCache: 3,
         isBrowserOnly: true,
+        depends: null,
       });
     });
   });

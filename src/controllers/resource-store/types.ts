@@ -11,9 +11,13 @@ import {
   RouterContext,
 } from '../../common/types';
 
+export type ExecutionTuple = [RouteResource, ResourceAction<any>];
+export type ExecutionMaybeTuple = [RouteResource, ResourceAction<any> | null];
+
 export type State = {
   data: ResourceStoreData;
   context: ResourceStoreContext;
+  executing: ExecutionMaybeTuple[] | null;
 };
 
 export type HydratableState = {
@@ -28,7 +32,7 @@ export type ResourceSliceIdentifier = {
   key: string;
 };
 
-type GetResourceOptions = {
+export type GetResourceOptions = {
   prefetch?: boolean;
   timeout?: number;
   isStatic?: boolean;
