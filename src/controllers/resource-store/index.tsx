@@ -12,6 +12,7 @@ import {
   RouterContext,
   RouteResource,
   RouteResourceResponse,
+  RouteResourceResponseBase,
   RouteResourceUpdater,
 } from '../../common/types';
 
@@ -163,12 +164,15 @@ export const privateActions = {
       return prevSlice;
     }
 
-    const pendingSlice = {
+    const pendingSlice: RouteResourceResponseBase<unknown> = {
       ...prevSlice,
       data: maxAge === 0 ? null : prevSlice.data,
       error: maxAge === 0 ? null : prevSlice.error,
       loading: true,
-      promise: promiseOrData,
+      promise:
+        promiseOrData instanceof Promise
+          ? promiseOrData
+          : Promise.resolve(promiseOrData),
       accessedAt: getAccessedAt(),
     };
     dispatch(setResourceState(type, key, pendingSlice));

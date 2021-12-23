@@ -76,8 +76,6 @@ export type RouteResourceError = Record<string, any> | Error;
 
 export type RouteResourceDataPayload = Record<string, any>;
 
-export type RouteResourcePromise<T> = Promise<T> | null;
-
 export type RouteResourceUpdater<RouteResourceData = unknown> = (
   data: RouteResourceData
 ) => RouteResourceData;
@@ -87,7 +85,7 @@ export type RouteResourceResponseBase<RouteResourceData> = {
   loading: RouteResourceLoading;
   error: RouteResourceError | null;
   data: RouteResourceData | null;
-  promise: RouteResourcePromise<RouteResourceData> | null;
+  promise: Promise<RouteResourceData> | null;
   expiresAt: RouteResourceTimestamp;
   accessedAt: RouteResourceTimestamp;
 };
@@ -143,7 +141,7 @@ export type RouteResource<RouteResourceData extends unknown = unknown> = {
   getData: (
     routerContext: RouterDataContext,
     customContext: ResourceStoreContext
-  ) => RouteResourcePromise<RouteResourceData>;
+  ) => RouteResourceData | Promise<RouteResourceData>;
   maxCache: number;
   isBrowserOnly: boolean;
   depends: ResourceType[] | null;
