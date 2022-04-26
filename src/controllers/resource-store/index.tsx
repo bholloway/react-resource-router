@@ -42,6 +42,7 @@ import {
   validateLRUCache,
   actionWithDependencies,
   mapActionWithDependencies,
+  booleanFeatureFlag,
 } from './utils';
 
 const PREFETCH_MAX_AGE = 10000;
@@ -81,15 +82,22 @@ export const privateActions = {
       type,
       key,
     });
+    const data = getNewSliceData(prevSlice.data);
 
-    dispatch(
-      setResourceState(type, key, {
-        ...prevSlice,
-        data: getNewSliceData(prevSlice.data),
-        expiresAt: getExpiresAt(maxAge),
-        accessedAt: getAccessedAt(),
-      })
-    );
+    const newSlice = booleanFeatureFlag`endeavour.spa.route-resource-consistency`
+      ? {
+          ...prevSlice,
+          data,
+          expiresAt: getExpiresAt(maxAge),
+          accessedAt: getAccessedAt(),
+        }
+      : {
+          ...prevSlice,
+          data,
+          expiresAt: getExpiresAt(maxAge),
+          accessedAt: getAccessedAt(),
+        };
+    dispatch(setResourceState(type, key, newSlice));
   },
 
   /**
@@ -100,35 +108,60 @@ export const privateActions = {
     resource: RouteResource,
     routerStoreContext: RouterContext,
     options: GetResourceOptions
-  ): ResourceAction<Promise<RouteResourceResponse>> => async ({
-    getState,
-    dispatch,
-  }) => {
-    const { type, getKey, maxAge } = resource;
-    const { context, ...resourceStoreState } = getState();
-    const key = getKey(routerStoreContext, context);
-    let cached = getSliceForResource(resourceStoreState, { type, key });
+  ): ResourceAction<Promise<RouteResourceResponse>> =>
+    booleanFeatureFlag`endeavour.spa.route-resource-consistency`
+      ? async ({ getState, dispatch }) => {
+          const { type, getKey, maxAge } = resource;
+          const { context, ...resourceStoreState } = getState();
+          const key = getKey(routerStoreContext, context);
+          let cached = getSliceForResource(resourceStoreState, { type, key });
 
-    if (shouldUseCache(cached)) {
-      if (isFromSsr(cached)) {
-        const withResolvedPromise = setSsrDataPromise(cached);
-        cached = setExpiresAt(withResolvedPromise, maxAge);
-      }
+          if (shouldUseCache(cached)) {
+            if (isFromSsr(cached)) {
+              const withResolvedPromise = setSsrDataPromise(cached);
+              cached = setExpiresAt(withResolvedPromise, maxAge);
+            }
 
-      cached.accessedAt = getAccessedAt();
-      dispatch(setResourceState(type, key, cached));
+            cached.accessedAt = getAccessedAt();
+            dispatch(setResourceState(type, key, cached));
 
-      return cached;
-    }
+            return cached;
+          }
 
-    return dispatch(
-      privateActions.getResourceFromRemote(
-        resource,
-        routerStoreContext,
-        options
-      )
-    );
-  },
+          return dispatch(
+            privateActions.getResourceFromRemote(
+              resource,
+              routerStoreContext,
+              options
+            )
+          );
+        }
+      : async ({ getState, dispatch }) => {
+          const { type, getKey, maxAge } = resource;
+          const { context, ...resourceStoreState } = getState();
+          const key = getKey(routerStoreContext, context);
+          let cached = getSliceForResource(resourceStoreState, { type, key });
+
+          if (shouldUseCache(cached)) {
+            if (isFromSsr(cached)) {
+              const withResolvedPromise = setSsrDataPromise(cached);
+              cached = setExpiresAt(withResolvedPromise, maxAge);
+            }
+
+            cached.accessedAt = getAccessedAt();
+            dispatch(setResourceState(type, key, cached));
+
+            return cached;
+          }
+
+          return dispatch(
+            privateActions.getResourceFromRemote(
+              resource,
+              routerStoreContext,
+              options
+            )
+          );
+        },
 
   /**
    * Request a single resource and update the resource cache.
@@ -137,91 +170,176 @@ export const privateActions = {
     resource: RouteResource,
     routerStoreContext: RouterContext,
     options: GetResourceOptions
-  ): ResourceAction<Promise<RouteResourceResponse<unknown>>> => async ({
-    getState,
-    dispatch,
-  }) => {
-    const { type, getKey, getData, maxAge } = resource;
-    const { prefetch, timeout } = options;
-    const { context, ...resourceStoreState } = getState();
-    const key = getKey(routerStoreContext, context);
-    const prevSlice = getSliceForResource(resourceStoreState, {
-      type,
-      key,
-    });
+  ): ResourceAction<Promise<RouteResourceResponse<unknown>>> =>
+    booleanFeatureFlag`endeavour.spa.route-resource-consistency`
+      ? async ({ getState, dispatch }) => {
+          const { type, getKey, getData, maxAge } = resource;
+          const { prefetch, timeout } = options;
+          const { context, ...resourceStoreState } = getState();
+          const key = getKey(routerStoreContext, context);
+          const prevSlice = getSliceForResource(resourceStoreState, {
+            type,
+            key,
+          });
 
-    // abort request if already in flight
-    if (prevSlice.loading) {
-      return prevSlice;
-    }
-
-    dispatch(validateLRUCache(resource, key));
-
-    const pendingSlice = {
-      ...prevSlice,
-      data: maxAge === 0 ? null : prevSlice.data,
-      error: maxAge === 0 ? null : prevSlice.error,
-      loading: true,
-      promise: getData(
-        { ...routerStoreContext, isPrefetch: !!prefetch },
-        context
-      ),
-      accessedAt: getAccessedAt(),
-      // prevent resource from being cleaned prematurely and traigger more network requests.
-      ...(options.prefetch
-        ? {
-            expiresAt: getExpiresAt(PREFETCH_MAX_AGE),
+          // abort request if already in flight
+          if (prevSlice.loading) {
+            return prevSlice;
           }
-        : {}),
-    };
 
-    dispatch(setResourceState(type, key, pendingSlice));
+          dispatch(validateLRUCache(resource, key));
 
-    const response = {
-      ...pendingSlice,
-    };
+          const pendingSlice = {
+            ...prevSlice,
+            data: maxAge === 0 ? null : prevSlice.data,
+            error: maxAge === 0 ? null : prevSlice.error,
+            loading: true,
+            promise: getData(
+              { ...routerStoreContext, isPrefetch: !!prefetch },
+              context
+            ),
+            accessedAt: getAccessedAt(),
+            // prevent resource from being cleaned prematurely and traigger more network requests.
+            ...(options.prefetch
+              ? {
+                  expiresAt: getExpiresAt(PREFETCH_MAX_AGE),
+                }
+              : {}),
+          };
 
-    try {
-      response.error = null;
+          dispatch(setResourceState(type, key, pendingSlice));
 
-      if (timeout) {
-        const timeoutGuard = generateTimeGuard(timeout);
-        const maybeData = await Promise.race([
-          pendingSlice.promise,
-          timeoutGuard.promise,
-        ]);
+          const response = {
+            ...pendingSlice,
+          };
 
-        if (!timeoutGuard.isPending) {
-          response.data = null;
-          response.error = new TimeoutError(type);
-          response.loading = true;
-          response.promise = null;
-        } else {
-          timeoutGuard.timerId && clearTimeout(timeoutGuard.timerId);
-          response.data = maybeData;
-          response.loading = false;
+          try {
+            response.error = null;
+
+            if (timeout) {
+              const timeoutGuard = generateTimeGuard(timeout);
+              const maybeData = await Promise.race([
+                pendingSlice.promise,
+                timeoutGuard.promise,
+              ]);
+
+              if (!timeoutGuard.isPending) {
+                response.data = null;
+                response.error = new TimeoutError(type);
+                response.loading = true;
+                response.promise = null;
+              } else {
+                timeoutGuard.timerId && clearTimeout(timeoutGuard.timerId);
+                response.data = maybeData;
+                response.loading = false;
+              }
+            } else {
+              response.data = await pendingSlice.promise;
+              response.loading = false;
+            }
+          } catch (e) {
+            response.error = e;
+            response.loading = false;
+          }
+
+          response.expiresAt = getExpiresAt(
+            options.prefetch && maxAge < PREFETCH_MAX_AGE
+              ? PREFETCH_MAX_AGE
+              : maxAge
+          );
+
+          response.accessedAt = getAccessedAt();
+
+          if (dispatch(getResourceState(type, key))) {
+            dispatch(setResourceState(type, key, response));
+          }
+
+          return response;
         }
-      } else {
-        response.data = await pendingSlice.promise;
-        response.loading = false;
-      }
-    } catch (e) {
-      response.error = e;
-      response.loading = false;
-    }
+      : async ({ getState, dispatch }) => {
+          const { type, getKey, getData, maxAge } = resource;
+          const { prefetch, timeout } = options;
+          const { context, ...resourceStoreState } = getState();
+          const key = getKey(routerStoreContext, context);
+          const prevSlice = getSliceForResource(resourceStoreState, {
+            type,
+            key,
+          });
 
-    response.expiresAt = getExpiresAt(
-      options.prefetch && maxAge < PREFETCH_MAX_AGE ? PREFETCH_MAX_AGE : maxAge
-    );
+          // abort request if already in flight
+          if (prevSlice.loading) {
+            return prevSlice;
+          }
 
-    response.accessedAt = getAccessedAt();
+          dispatch(validateLRUCache(resource, key));
 
-    if (dispatch(getResourceState(type, key))) {
-      dispatch(setResourceState(type, key, response));
-    }
+          const pendingSlice = {
+            ...prevSlice,
+            data: maxAge === 0 ? null : prevSlice.data,
+            error: maxAge === 0 ? null : prevSlice.error,
+            loading: true,
+            promise: getData(
+              { ...routerStoreContext, isPrefetch: !!prefetch },
+              context
+            ),
+            accessedAt: getAccessedAt(),
+            // prevent resource from being cleaned prematurely and traigger more network requests.
+            ...(options.prefetch
+              ? {
+                  expiresAt: getExpiresAt(PREFETCH_MAX_AGE),
+                }
+              : {}),
+          };
 
-    return response;
-  },
+          dispatch(setResourceState(type, key, pendingSlice));
+
+          const response = {
+            ...pendingSlice,
+          };
+
+          try {
+            response.error = null;
+
+            if (timeout) {
+              const timeoutGuard = generateTimeGuard(timeout);
+              const maybeData = await Promise.race([
+                pendingSlice.promise,
+                timeoutGuard.promise,
+              ]);
+
+              if (!timeoutGuard.isPending) {
+                response.data = null;
+                response.error = new TimeoutError(type);
+                response.loading = true;
+                response.promise = null;
+              } else {
+                timeoutGuard.timerId && clearTimeout(timeoutGuard.timerId);
+                response.data = maybeData;
+                response.loading = false;
+              }
+            } else {
+              response.data = await pendingSlice.promise;
+              response.loading = false;
+            }
+          } catch (e) {
+            response.error = e;
+            response.loading = false;
+          }
+
+          response.expiresAt = getExpiresAt(
+            options.prefetch && maxAge < PREFETCH_MAX_AGE
+              ? PREFETCH_MAX_AGE
+              : maxAge
+          );
+
+          response.accessedAt = getAccessedAt();
+
+          if (dispatch(getResourceState(type, key))) {
+            dispatch(setResourceState(type, key, response));
+          }
+
+          return response;
+        },
 };
 
 export const actions: Actions = {

@@ -20,3 +20,4 @@ export {
   actionWithDependencies,
   mapActionWithDependencies,
 } from './dependent-resources';
+export { booleanFeatureFlag } from './get-feature-flag';
