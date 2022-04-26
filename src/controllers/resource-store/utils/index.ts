@@ -20,4 +20,5 @@ export {
   actionWithDependencies,
   mapActionWithDependencies,
 } from './dependent-resources';
+export { toPromise } from './to-promise';
 export { booleanFeatureFlag } from './get-feature-flag';
