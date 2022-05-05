@@ -9,6 +9,7 @@ import { getResourceStore } from '../resource-store';
 import { getRouterStore } from '../router-store';
 
 import { RequestResourcesParams } from './types';
+import { booleanFeatureFlag } from '../resource-store/utils';
 
 /**
  * Ensures the router store will not respond to history changes.
@@ -47,6 +48,9 @@ StaticRouter.requestResources = async (props: RequestResourcesParams) => {
 
   bootstrapStore({ ...bootstrapProps, ...overrides });
 
+  console.log(
+    `react-resource-router: endeavour.spa.route-resource-consistency=${booleanFeatureFlag`endeavour.spa.route-resource-consistency`}`
+  );
   await requestRouteResources({ timeout, isStatic: true });
 
   return getResourceStore().actions.getSafeData();
